@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                                XMCDwColor_v2.mq4 |
+//|                                                XMCDwColor_v1.mq4 |
 //|                                       manmohan.pardesi@gmail.com | 
 //|                       manmohan.pardesi@gmail.com 04/30/25 01:19am|
 //| Last revision:              Modified histograms         04/30/25 |
@@ -32,9 +32,9 @@
 //--- indicator parameters
 input int InpFast=10;   // Fast Period
 input int InpSlow=20;   // Slow Period
-input int InpSignal=10;  // Signal Period
+input int InpSignal=10;  // Signal Period (Median MCD)
 input int InpModePrice=MODE_CLOSE; //Price Mode 3-Close 2-High 1-Low 0 -Open 
-input int InpSmoothPeriod = 5; // Smoothing period
+input int InpSmoothPeriod = 5; // Smoothing period of MCD Line
 //--- indicator buffers
 double ExtMCDBuffer[];
 double ExtSignalBuffer[];
@@ -177,7 +177,8 @@ int OnCalculate (const int rates_total,
       ExtSignalBuffer[i] = medianMCD; 
       //Diff/histogram
       //04/20/25ExtMCDBuffer[i] = ExtMCDLineBuffer[i] - ExtSignalBuffer[i];
-      ExtMCDBuffer[i] = ExtMCDLineBuffer[i] ;
+      //ExtMCDBuffer[i] = ExtMCDLineBuffer[i] ;
+      ExtMCDBuffer[i] = ExtSmoothingBuffer[i] - ExtSignalBuffer[i];
   
       if(ExtMCDBuffer[i]>=0) 
       {
