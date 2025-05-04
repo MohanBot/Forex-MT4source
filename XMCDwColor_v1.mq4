@@ -165,9 +165,10 @@ int OnCalculate (const int rates_total,
    
   for (i=limit-1; i>=0; i--)
   {
+      if (i + 1 >= rates_total) continue; // not enough future bars, skip
+    
       ExtSmoothingBuffer[i] = iMAOnArray(ExtMCDLineBuffer,0,InpSmoothPeriod,0,MODE_EMA,i);
       //ExponentialMAOnBuffer(rates_total, prev_calculated,0,InpSmoothPeriod,ExtMCDLineBuffer,ExtSmoothingBuffer);   
-     
       //mminMCD =  CalculateLowestValue(i,InpSignal,ExtMCDLineBuffer);
       //mmaxMCD = CalculateHighestValue(i,InpSignal,ExtMCDLineBuffer);
       mminMCD =  minValueOfArray(ExtMCDLineBuffer,InpSignal,i);
