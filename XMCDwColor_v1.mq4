@@ -1,33 +1,36 @@
 //+------------------------------------------------------------------+
-//|                                                XMCDwColor_v1.mq4 |
-//|                                       manmohan.pardesi@gmail.com |
-//+------------------------------------------------------------------+
+//|                                                XMCDwColor_v2.mq4 |
+//|                                       manmohan.pardesi@gmail.com | 
+//|                       manmohan.pardesi@gmail.com 04/30/25 01:19am|
+//| Last revision:              Modified histograms         04/30/25 |
+//+-------------------------------------------------------------------+
 #property copyright   "manmohan.pardesi@gmail.com"
 #property link        "manmohan.pardesi@gmail.com"
 #property description "Median Convergence/Divergence"
 #property strict
+//#include <MovingAverages.mqh>
 
 //--- indicator settings
 #property  indicator_separate_window
 #property  indicator_buffers 7
-#property  indicator_color1  LimeGreen
+#property  indicator_color1  clrLimeGreen
 #property  indicator_color2  clrGreen
 #property  indicator_color3  clrRed
-#property  indicator_color4  PaleVioletRed
-#property  indicator_color5  Green
-#property  indicator_color6  White
-#property  indicator_color7  Orange
+#property  indicator_color4  clrPaleVioletRed
+#property  indicator_color5  clrGreen
+#property  indicator_color6  clrNONE //clrWhite
+#property  indicator_color7  clrNONE //clrOrange
 
-#property  indicator_width1  2
-#property  indicator_width2  2
-#property  indicator_width3  2
-#property  indicator_width4  2
-#property  indicator_width5  3
+#property  indicator_width1  1
+#property  indicator_width2  1
+#property  indicator_width3  1
+#property  indicator_width4  1
+#property  indicator_width5  1
 #property  indicator_width6  1
 #property  indicator_width7  1
 
 //--- indicator parameters
-input int InpFast=5;   // Fast Period
+input int InpFast=10;   // Fast Period
 input int InpSlow=20;   // Slow Period
 input int InpSignal=10;  // Signal Period
 input int InpModePrice=MODE_CLOSE; //Price Mode 3-Close 2-High 1-Low 0 -Open 
@@ -79,9 +82,9 @@ int OnInit(void)
    SetIndexLabel(1,"MCDPosAndDown");
    SetIndexLabel(2,"MCDNegAndDown");
    SetIndexLabel(3,"MCDNegAndUp");
-   SetIndexLabel(4,"Signal");
-   SetIndexLabel(5,"MCDLine");
-   SetIndexLabel(6,"Smoothing");
+   SetIndexLabel(4,"Signal"); //green line
+   SetIndexLabel(5,"MCDLine");  //white line
+   SetIndexLabel(6,"Smoothing"); //orange line
    SetIndexLabel(7,"Diff");
 
 //--- name for DataWindow and indicator subwindow label
@@ -139,7 +142,7 @@ int OnCalculate (const int rates_total,
    if (prev_calculated>0) limit++;
     
    //--- median CD counted in the 1-st buffer
-   for(i=0; i<limit; i++)
+   for (i=limit-1; i>=0; i--)
    {
       //mminF=Close[Lowest(NULL,0,MODE_CLOSE,InpFast,i)];
       //mmaxF=Close[Highest(NULL,0,MODE_CLOSE,InpFast,i)];
@@ -156,13 +159,15 @@ int OnCalculate (const int rates_total,
       medianF = (mminF + mmaxF) / 2.0;
       medianS = (mminS + mmaxS) / 2.0; 
       ExtMCDLineBuffer[i]= medianF - medianS;
-   }
-//--- signal line counted in the 2-nd buffer
+  }
+  //--- signal line counted in the 2-nd buffer
   // for(i=pos; i<rates_total && !IsStopped(); i++)
    
-  for(i=0; i<limit; i++)  
+  for (i=limit-1; i>=0; i--)
   {
       ExtSmoothingBuffer[i] = iMAOnArray(ExtMCDLineBuffer,0,InpSmoothPeriod,0,MODE_EMA,i);
+      //ExponentialMAOnBuffer(rates_total, prev_calculated,0,InpSmoothPeriod,ExtMCDLineBuffer,ExtSmoothingBuffer);   
+     
       //mminMCD =  CalculateLowestValue(i,InpSignal,ExtMCDLineBuffer);
       //mmaxMCD = CalculateHighestValue(i,InpSignal,ExtMCDLineBuffer);
       mminMCD =  minValueOfArray(ExtMCDLineBuffer,InpSignal,i);
@@ -171,31 +176,30 @@ int OnCalculate (const int rates_total,
       medianMCD = (mminMCD + mmaxMCD) / 2.0;
       ExtSignalBuffer[i] = medianMCD; 
       //Diff/histogram
-      ExtMCDBuffer[i] = ExtMCDLineBuffer[i] - ExtSignalBuffer[i];
-   
-  
+      //04/20/25ExtMCDBuffer[i] = ExtMCDLineBuffer[i] - ExtSignalBuffer[i];
+      ExtMCDBuffer[i] = ExtMCDLineBuffer[i] ;
   
       if(ExtMCDBuffer[i]>=0) 
       {
-         if ((i-1)>=0)
+         if ((i<rates_total-1))
          {
-            if (ExtMCDBuffer[i]>ExtMCDBuffer[i-1]  )
+            if (ExtMCDBuffer[i]>ExtMCDBuffer[i+1]  )
             {
               ExtPosAndUpBuffer[i] = ExtMCDBuffer[i];
               ExtPosAndDownBuffer[i] = 0.0;
             }
          else 
             {
-              ExtPosAndDownBuffer[i] = ExtMCDBuffer[i];
-              ExtPosAndUpBuffer[i] = 0.0 ;
+              ExtPosAndDownBuffer[i] = ExtMCDBuffer[i+1];
+              ExtPosAndUpBuffer[i] = 0.0;
             }
          }
       }
       else 
       {
-         if ((i-1)>=0)
+         if ((i<rates_total-1))
          {
-            if (ExtMCDBuffer[i]<ExtMCDBuffer[i-1]  )
+            if (ExtMCDBuffer[i]<ExtMCDBuffer[i+1]  )
             {
               ExtNegAndDownBuffer[i] = ExtMCDBuffer[i];
               ExtNegAndUpBuffer[i] = 0.0;
