@@ -1,0 +1,233 @@
+//+------------------------------------------------------------------+
+//| Adaptive_Rescaled_RSI_V12_Fixed.mq4                             |
+//| Full fixed version - pixel-perfect match to ThinkScript         |
+//| Main Rescaled RSI + coloring + yellow LMA + gray RSI + thresholds|
+//+------------------------------------------------------------------+
+#property indicator_separate_window
+#property indicator_minimum 0
+#property indicator_maximum 100
+#property indicator_buffers 15
+#property indicator_plots 13
+
+// Plot Colors & Styles
+#property indicator_color1 clrGray          // RSI (gray)
+#property indicator_color2 clrOrange        // Neutral Rescaled
+#property indicator_color3 clrLimeGreen     // Bullish Rescaled
+#property indicator_color4 clrRed           // Bearish Rescaled
+#property indicator_color5 clrYellow        // smoothing LMA
+#property indicator_width2 2
+#property indicator_width3 2
+#property indicator_width4 2
+#property indicator_width5 2
+
+// Inputs (same as original + ThinkScript)
+input int Length = 14;
+input int MALength = 21;
+input int Length_in = 70;
+input int Length_out = 14;
+enum ENUM_ANCHOR { ANCHOR_FOUR_HOURS, ANCHOR_DAY, ANCHOR_WEEK, ANCHOR_MONTH };
+input ENUM_ANCHOR anchorPeriod = ANCHOR_DAY;
+input string BeginTime = "08:00";          // kept for compatibility (only affects FOUR_HOURS if you modify IsNewAnchor)
+input int MAFast_length = 3;
+input int MASlow_length = 5;
+
+// Buffers
+double RSIBuf[], RSNeut[], RSBull[], RSBear[], smoothingLMA_Buf[];
+double OB_Outer[], OB_Inner[], OS_Inner[], OS_Outer[];
+double R_Outer[], R_Inner[], S_Inner[], S_Outer[];
+double TWAP_Dist[], logitRSI_Buf[];
+double RescalRSI_middle_Buf[], RescalRSI_CC_vol_Buf[];
+
+// New internal buffer (not plotted)
+double StdCCVolBuf[];
+
+// Session start (kept for compatibility)
+int startHour, startMinute;
+
+int OnInit()
+{
+   IndicatorBuffers(15);
+   
+   SetIndexBuffer(0, RSIBuf);              SetIndexStyle(0, DRAW_LINE);
+   SetIndexBuffer(1, RSNeut);              SetIndexStyle(1, DRAW_LINE);
+   SetIndexBuffer(2, RSBull);              SetIndexStyle(2, DRAW_LINE);
+   SetIndexBuffer(3, RSBear);              SetIndexStyle(3, DRAW_LINE);
+   SetIndexBuffer(4, smoothingLMA_Buf);    SetIndexStyle(4, DRAW_LINE);
+   
+   SetIndexBuffer(5, OB_Outer);  SetIndexStyle(5, DRAW_LINE, STYLE_DOT, 1, clrGreen);
+   SetIndexBuffer(6, OB_Inner);  SetIndexStyle(6, DRAW_LINE, STYLE_DOT, 1, clrLime);
+   SetIndexBuffer(7, OS_Inner);  SetIndexStyle(7, DRAW_LINE, STYLE_DOT, 1, clrOrangeRed);
+   SetIndexBuffer(8, OS_Outer);  SetIndexStyle(8, DRAW_LINE, STYLE_DOT, 1, clrRed);
+   SetIndexBuffer(9, R_Outer);   SetIndexStyle(9, DRAW_LINE, STYLE_DOT, 1, clrLightGray);
+   SetIndexBuffer(10,R_Inner);   SetIndexStyle(10,DRAW_LINE, STYLE_DOT, 1, clrLightGray);
+   SetIndexBuffer(11,S_Inner);   SetIndexStyle(11,DRAW_LINE, STYLE_DOT, 1, clrLightGray);
+   SetIndexBuffer(12,S_Outer);   SetIndexStyle(12,DRAW_LINE, STYLE_DOT, 1, clrLightGray);
+   
+   SetIndexBuffer(13,RescalRSI_middle_Buf);
+   SetIndexBuffer(14,RescalRSI_CC_vol_Buf);
+   
+   // Parse BeginTime (kept for future FOUR_HOURS extension)
+   string timeParts[];
+   if(StringSplit(BeginTime, ':', timeParts) == 2)
+   {
+      startHour   = (int)StringToInteger(timeParts[0]);
+      startMinute = (int)StringToInteger(timeParts[1]);
+   }
+   
+   return(INIT_SUCCEEDED);
+}
+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+{
+   if(rates_total <= Length_in + MALength) return(0);
+   
+   // Resize dynamic arrays
+   if(ArraySize(TWAP_Dist) != rates_total)
+   {
+      ArrayResize(TWAP_Dist, rates_total);
+      ArrayResize(logitRSI_Buf, rates_total);
+      ArrayResize(StdCCVolBuf, rates_total);
+   }
+   
+   ArraySetAsSeries(TWAP_Dist, true);
+   ArraySetAsSeries(logitRSI_Buf, true);
+   ArraySetAsSeries(StdCCVolBuf, true);
+   
+   int limit = rates_total - prev_calculated;
+   if(limit > 1) limit = rates_total - 1;
+   
+   // ===================================================================
+   // LOOP 1: TWAP + Rescaled RSI middle / CC_vol (exact recursion)
+   // ===================================================================
+   double cumPrice = 0; int cumBars = 0;
+   for(int k = rates_total - 1; k >= 0; k--)
+   {
+      double pSrc = (open[k] + high[k] + low[k] + close[k]) / 4.0;
+      
+      if(k == rates_total - 1 || IsNewAnchor(time[k], time[MathMin(k+1, rates_total-1)]))
+      {
+         cumPrice = pSrc; cumBars = 1;
+      }
+      else
+      {
+         cumPrice += pSrc; cumBars++;
+      }
+      TWAP_Dist[k] = (pSrc - (cumPrice / (double)cumBars)) / _Point;
+      
+      // Rescaled middle & vol (exact ThinkScript recursion)
+      double RescalRSI_SF = 1.0 / MathMin(Length_in, rates_total - k);
+      if(k == rates_total - 1)
+      {
+         RescalRSI_middle_Buf[k] = close[k];
+         RescalRSI_CC_vol_Buf[k] = _Point;
+      }
+      else
+      {
+         RescalRSI_middle_Buf[k] = (1.0 - RescalRSI_SF) * RescalRSI_middle_Buf[k+1] + RescalRSI_SF * close[k];
+         RescalRSI_CC_vol_Buf[k] = (1.0 - RescalRSI_SF) * RescalRSI_CC_vol_Buf[k+1] + RescalRSI_SF * MathAbs(close[k] - close[k+1]);
+      }
+   }
+   
+   // ===================================================================
+   // New: Standard CC_vol for gray RSI + smoothing (Wilders |close-close[1]|)
+   // ===================================================================
+   double SF_std = 1.0 / Length;
+   for(int m= rates_total - 1; m>= 0; m--)
+   {
+      double absdc = (m == rates_total - 1) ? 0.0 : MathAbs(close[m] - close[m+1]);
+      if(m == rates_total - 1)
+         StdCCVolBuf[m] = absdc;
+      else
+         StdCCVolBuf[m] = (1.0 - SF_std) * StdCCVolBuf[m+1] + SF_std * absdc;
+   }
+   
+   // ===================================================================
+   // LOOP 2: Gray RSI + Logit (full history - now exact Wilders)
+   // ===================================================================
+   for(int j = rates_total - 1; j >= 0; j--)
+   {
+      double middle = iMA(NULL, 0, Length*2-1, 0, MODE_EMA, PRICE_CLOSE, j);
+      double CC_vol = StdCCVolBuf[j];
+      
+      double den_C = MathMax(CC_vol, 0.0000001) * (Length - 1);
+      RSIBuf[j] = 50.0 + 50.0 * ((close[j] - middle) / (den_C + 0.0000001));
+      
+      double clampRSI = MathMax(0.01, MathMin(99.99, RSIBuf[j]));
+      logitRSI_Buf[j] = MathLog(clampRSI / (100.0 - clampRSI));
+   }
+   
+   // ===================================================================
+   // Constant Adaptive Thresholds (exact ThinkScript formulas)
+   // ===================================================================
+   double inv_sqrt_lenm1 = 1.0 / MathSqrt(Length - 1.0);
+   
+   double body_th     = MathSqrt((5.0 - MathSqrt(17.0)) / 2.0);
+   double tail_th     = MathSqrt((5.0 + MathSqrt(17.0)) / 2.0);
+   double breakout_th = 1.0;
+   double reversal_th = MathSqrt(3.0);
+   
+   double z_in   = 50.0 * (MathExp(2.0 * body_th     * inv_sqrt_lenm1) - 1.0) / (MathExp(2.0 * body_th     * inv_sqrt_lenm1) + 1.0);
+   double z_out  = 50.0 * (MathExp(2.0 * breakout_th * inv_sqrt_lenm1) - 1.0) / (MathExp(2.0 * breakout_th * inv_sqrt_lenm1) + 1.0);
+   double oo_in  = 50.0 * (MathExp(2.0 * reversal_th * inv_sqrt_lenm1) - 1.0) / (MathExp(2.0 * reversal_th * inv_sqrt_lenm1) + 1.0);
+   double oo_out = 50.0 * (MathExp(2.0 * tail_th     * inv_sqrt_lenm1) - 1.0) / (MathExp(2.0 * tail_th     * inv_sqrt_lenm1) + 1.0);
+   
+   // ===================================================================
+   // LOOP 3: Rescaled RSI, Smoothing LMA, TWAP coloring, Thresholds
+   // ===================================================================
+   for(int i = limit; i >= 0; i--)
+   {
+      // Yellow smoothing LMA - now exact Wilders/SMMA on logit
+      double maLogit = iMAOnArray(logitRSI_Buf, rates_total, MALength*2-1, 0, MODE_EMA, i);
+      smoothingLMA_Buf[i] = 100.0 * (MathExp(maLogit) / (1.0 + MathExp(maLogit)));
+      
+      // Rescaled RSI (exact ThinkScript, including early-bar protection)
+      int eff_len = MathMin(Length_in, rates_total - i);
+      double RescalRSI_myRSI;
+      if(eff_len <= 1)
+         RescalRSI_myRSI = 50.0;
+      else
+      {
+         double den_Rescal = RescalRSI_CC_vol_Buf[i] * (eff_len - 1.0);
+         RescalRSI_myRSI = 50.0 + 50.0 * ((close[i] - RescalRSI_middle_Buf[i]) / (den_Rescal + 0.0000001));
+      }
+      
+      double safe_RSI = MathMax(0.01, MathMin(99.99, RescalRSI_myRSI));
+      double RSI_Zscore = MathLog(safe_RSI / (100.0 - safe_RSI)) / (2.0 / MathSqrt(Length_in - 1.0));
+      double output_RSI = 100.0 * MathExp(RSI_Zscore * (2.0 / MathSqrt(Length_out - 1.0))) / (1.0 + MathExp(RSI_Zscore * (2.0 / MathSqrt(Length_out - 1.0))));
+      
+      // TWAP coloring (exact)
+      double fD = iMAOnArray(TWAP_Dist, rates_total, MAFast_length, 0, MODE_SMA, i);
+      double sD = iMAOnArray(TWAP_Dist, rates_total, MASlow_length, 0, MODE_SMA, i);
+      
+      RSNeut[i] = output_RSI; RSBull[i] = EMPTY_VALUE; RSBear[i] = EMPTY_VALUE;
+      if(sD > 0 && fD > sD)      { RSBull[i] = output_RSI; RSNeut[i] = EMPTY_VALUE; }
+      else if(sD < 0 && fD < sD) { RSBear[i] = output_RSI; RSNeut[i] = EMPTY_VALUE; }
+      
+      // Threshold levels (constant)
+      R_Inner[i] = 50.0 + z_in;   R_Outer[i] = 50.0 + z_out;
+      S_Inner[i] = 50.0 - z_in;   S_Outer[i] = 50.0 - z_out;
+      OB_Inner[i] = 50.0 + oo_in; OB_Outer[i] = 50.0 + oo_out;
+      OS_Inner[i] = 50.0 - oo_in; OS_Outer[i] = 50.0 - oo_out;
+   }
+   
+   return(rates_total);
+}
+
+// Anchor detection - DAY now exactly matches ThinkScript (calendar day change)
+bool IsNewAnchor(datetime current, datetime previous)
+{
+   if(anchorPeriod == ANCHOR_FOUR_HOURS) return (TimeHour(current)/4 != TimeHour(previous)/4);
+   if(anchorPeriod == ANCHOR_DAY)        return (TimeDay(current) != TimeDay(previous));
+   if(anchorPeriod == ANCHOR_WEEK)       return (TimeDayOfWeek(current) < TimeDayOfWeek(previous));
+   if(anchorPeriod == ANCHOR_MONTH)      return (TimeMonth(current) != TimeMonth(previous));
+   return false;
+}
