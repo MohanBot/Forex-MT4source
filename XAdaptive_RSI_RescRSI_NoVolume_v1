@@ -1,7 +1,11 @@
 //+------------------------------------------------------------------+
-//| Adaptive_Rescaled_RSI_V12_Fixed.mq4                             |
-//| Full fixed version - pixel-perfect match to ThinkScript         |
+//|                             XAdaptive_RSI_RescRSI_NoVolume_v1.mq4|
+//|                      manmohan.pardesi@gmail.com  02/24/26 06:49pm|
 //| Main Rescaled RSI + coloring + yellow LMA + gray RSI + thresholds|
+//+------------------------------------------------------------------+
+#property copyright "manmohan.pardesi@gmail.com"
+#property link      "manmohan.pardesi@gmail.com"
+#property strict
 //+------------------------------------------------------------------+
 #property indicator_separate_window
 #property indicator_minimum 0
