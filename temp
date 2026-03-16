@@ -1,0 +1,19 @@
+//@version=3
+study("OBOS")
+
+hline(100)
+hline(-100)
+length=input(9,title="Lenggth")
+ys1=(high+low+close*2)/4
+rk3=ema(ys1,length)
+rk4=stdev(ys1,length)
+rk5=(ys1-rk3)*100/rk4
+rk6=ema(rk5,length)
+up=ema(rk6,length)
+down=ema(up,length)
+Oo=up<down?up:down
+Hh=Oo
+Ll=up<down?down:up
+Cc=Ll
+barcolor2=Oo[1]<Oo and Cc<Cc[1]?blue:up>down?green:red
+plotcandle(Oo,Hh,Ll,Cc,color=barcolor2)
